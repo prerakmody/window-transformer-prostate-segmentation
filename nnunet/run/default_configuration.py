@@ -12,7 +12,7 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-
+import numpy as np
 import nnunet
 from nnunet.paths import network_training_output_dir, preprocessing_output_dir, default_plans_identifier
 from batchgenerators.utilities.file_and_folder_operations import *
@@ -34,8 +34,9 @@ def get_configuration_from_output_folder(folder):
 def get_default_configuration(network, task, network_trainer, plans_identifier=default_plans_identifier,
                               search_in=(nnunet.__path__[0], "training", "network_training"),
                               base_module='nnunet.training.network_training'):
-    assert network in ['2d', '3d_lowres', '3d_fullres', '3d_cascade_fullres'], \
-        "network can only be one of the following: \'3d_lowres\', \'3d_fullres\', \'3d_cascade_fullres\'"
+    assert network in ['2d', '3d_lowres', '3d_fullres', '3d_cascade_fullres', '3d_nnFormer','3d_nnConv','3d_nnFormer_pool','3d_nnFormer_nope','3d_nnFormer_64','3d_nnFormer_96', '3d_nnFormer_v4', '3d_nnFormer_d1', '3d_nnFormer_v4d1', "3d_nnFormer_v4d2"
+        ,"3d_nnFormer_v4d4","3d_nnFormer_v4d5","3d_nnFormer_v4d5_64","3d_nnFormer_v4d5_96","3d_nnFormer_convmixer"]
+
 
     dataset_directory = join(preprocessing_output_dir, task)
 
@@ -45,6 +46,21 @@ def get_default_configuration(network, task, network_trainer, plans_identifier=d
         plans_file = join(preprocessing_output_dir, task, plans_identifier + "_plans_3D.pkl")
 
     plans = load_pickle(plans_file)
+    # We use defualt plans(the same as nnUNet3D so this part does not need to be changed
+    if task=='Task501_ProstateSegmentation' or  task=='Task502_ProstateSegmentation' and network!='3d_fullres':
+        plans['plans_per_stage'][1]['batch_size'] = 4
+        if network=='3d_nnFormer_v3':
+            plans['plans_per_stage'][1]['batch_size'] = 2
+        plans['plans_per_stage'][1]['patch_size'] = np.array([64, 128, 128])
+        plans['plans_per_stage'][1]['pool_op_kernel_sizes']=[[2,2,2],[2,2,2],[2,2,2],[2,2,2]]
+        plans['plans_per_stage'][1]['conv_kernel_sizes']=[[3,3,3],[3,3,3],[3,3,3],[3,3,3],[3,3,3]]
+        pickle_file = open(plans_file,'wb')
+        pickle.dump(plans, pickle_file)
+        pickle_file.close()
+    else:
+        plans['plans_per_stage'][1]['batch_size'] = 4
+        pickle_file = open(plans_file,'wb')
+        pickle.dump(plans, pickle_file)
     possible_stages = list(plans['plans_per_stage'].keys())
 
     if (network == '3d_cascade_fullres' or network == "3d_lowres") and len(possible_stages) == 1:
@@ -59,6 +75,7 @@ def get_default_configuration(network, task, network_trainer, plans_identifier=d
     trainer_class = recursive_find_python_class([join(*search_in)], network_trainer,
                                                 current_module=base_module)
 
+    temp_path = network_training_output_dir
     output_folder_name = join(network_training_output_dir, network, task, network_trainer + "__" + plans_identifier)
 
     print("###############################################")

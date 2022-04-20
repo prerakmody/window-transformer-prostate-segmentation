@@ -15,13 +15,14 @@
 
 import argparse
 import torch
+import os
 
 from nnunet.inference.predict import predict_from_folder
 from nnunet.paths import default_plans_identifier, network_training_output_dir, default_cascade_trainer, default_trainer
 from batchgenerators.utilities.file_and_folder_operations import join, isdir
 from nnunet.utilities.task_name_id_conversion import convert_id_to_task_name
 
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", '--input_folder', help="Must contain all modalities for each patient in the correct"
@@ -150,8 +151,8 @@ def main():
         task_id = int(task_name)
         task_name = convert_id_to_task_name(task_id)
 
-    assert model in ["2d", "3d_lowres", "3d_fullres", "3d_cascade_fullres"], "-m must be 2d, 3d_lowres, 3d_fullres or " \
-                                                                             "3d_cascade_fullres"
+    #assert model in ["2d", "3d_lowres", "3d_fullres", "3d_cascade_fullres", "3d_nnFormer","3d_nnFormer_v4", "3d_SwinUNETR", "3d_uuFormer_v4"], "-m must be 2d, 3d_lowres, 3d_fullres or " \
+                                                                             #"3d_cascade_fullres"
 
     # if force_separate_z == "None":
     #     force_separate_z = None

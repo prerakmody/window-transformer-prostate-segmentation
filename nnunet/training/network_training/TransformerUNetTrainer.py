@@ -1,86 +1,98 @@
-#    Copyright 2020 Division of Medical Image Computing, German Cancer Research Center (DKFZ), Heidelberg, Germany
-#
-#    Licensed under the Apache License, Version 2.0 (the "License");
-#    you may not use this file except in compliance with the License.
-#    You may obtain a copy of the License at
-#
-#        http://www.apache.org/licenses/LICENSE-2.0
-#
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS,
-#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#    See the License for the specific language governing permissions and
-#    limitations under the License.
-
-
-from collections import OrderedDict
-from typing import Tuple
-
-import numpy as np
-import torch
-from nnunet.training.data_augmentation.data_augmentation_moreDA import get_moreDA_augmentation
-from nnunet.training.loss_functions.deep_supervision import MultipleOutputLoss2
-from nnunet.utilities.to_torch import maybe_to_torch, to_cuda
-from nnunet.network_architecture.generic_UNet import Generic_UNet
-from nnunet.network_architecture.initialization import InitWeights_He
-from nnunet.network_architecture.neural_network import SegmentationNetwork
+from nnunet.training.network_training.nnUNetTrainer import nnUNetTrainer
+from nnunet.training.network_training.network_trainer import NetworkTrainer
+from batchgenerators.utilities.file_and_folder_operations import *
 from nnunet.training.data_augmentation.default_data_augmentation import default_2D_augmentation_params, \
     get_patch_size, default_3D_augmentation_params
+from nnunet.training.data_augmentation.data_augmentation_moreDA import get_moreDA_augmentation
+from nnunet.utilities.to_torch import maybe_to_torch, to_cuda
+from nnunet.network_architecture.initialization import InitWeights_He
+from nnunet.network_architecture.neural_network import SegmentationNetwork
+from nnunet.training.loss_functions.deep_supervision import MultipleOutputLoss2
 from nnunet.training.dataloading.dataset_loading import unpack_dataset
-from nnunet.training.network_training.nnUNetTrainer import nnUNetTrainer
+from nnunet.network_architecture.models.nnFormer import nnformer
+from nnunet.network_architecture.models.nnConv import nnConv
+from nnunet.network_architecture.models.nnFormer_pool import nnformer_pool
+from nnunet.network_architecture.models.nnFormer_nope import nnformer_nope
+from nnunet.network_architecture.models.nnFormer_64 import nnformer_64
+from nnunet.network_architecture.models.nnFormer_96 import nnformer_96
+from nnunet.network_architecture.models.nnFormer_d1 import nnformer_d1
+from nnunet.network_architecture.models.nnFormer_v4 import nnformer_v4
+from nnunet.network_architecture.models.nnFormer_v4d1 import nnformer_v4d1
+from nnunet.network_architecture.models.nnFormer_v4d2 import nnformer_v4d2
+from nnunet.network_architecture.models.nnFormer_v4d4 import nnformer_v4d4
+from nnunet.network_architecture.models.nnFormer_v4d5 import nnformer_v4d5
+from nnunet.network_architecture.models.nnFormer_v4d5_64 import nnformer_v4d5_64
+from nnunet.network_architecture.models.nnFormer_v4d5_96 import nnformer_v4d5_96
+from nnunet.network_architecture.models.nnFormer_convmixer import nnformer_ConvMixer
 from nnunet.utilities.nd_softmax import softmax_helper
 from sklearn.model_selection import KFold
 from torch import nn
 from torch.cuda.amp import autocast
 from nnunet.training.learning_rate.poly_lr import poly_lr
-from batchgenerators.utilities.file_and_folder_operations import *
+import numpy as np
+import torch
+from collections import OrderedDict
+from typing import Tuple
 
+model_name = '3d_nnConv'
+splits_path = 'splits_h2.pkl'
+class TransformerUNetTrainer(nnUNetTrainer):
+    '''
+    Modified trainer for Transformer
+    The run_training.py first gets the trainer class then initializes it
+    trainer = trainer_class()
+    trainer.initialize()
+    optional(load check_points)
+    trainer.run_training()
 
-class nnUNetTrainerV2(nnUNetTrainer):
-    """
-    Info for Fabian: same as internal nnUNetTrainerV2_2
-    """
-
+    trainer.load...
+    trainer.validate()
+    '''
     def __init__(self, plans_file, fold, output_folder=None, dataset_directory=None, batch_dice=True, stage=None,
                  unpack_data=True, deterministic=True, fp16=False):
+        '''
+
+        :param plans_file: '/home/yicong/桌面/nnUNet_Folders/nnUNet_preprocessed/Task501_ProstateSegmentation/nnUNetPlansv2.1_plans_3D.pkl' won't change always use this one
+        :param fold: 0 won't change always use this one
+        :param output_folder: '/home/yicong/桌面/nnUNet_Folders/RESULTS_FOLDER/nnUNet/3d_nnFormer/Task501_ProstateSegmentation/TransformerUNetTrainer__nnUNetPlansv2.1' model based
+        :param dataset_directory: '/home/yicong/桌面/nnUNet_Folders/nnUNet_preprocessed/Task501_ProstateSegmentation' won't change
+        :param batch_dice: True  questons regard this
+        :param stage: 1  should be deprecated
+        :param unpack_data: True just remain
+        :param deterministic: False can be True
+        :param fp16: True can be False
+        '''
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
-        self.max_num_epochs = 500
-        self.initial_lr = 1e-2
+        # There are parameters to be set but I do not know now
+        self.max_num_epochs = 400
+        self.patience = 100
+        self.initial_lr = 1e-5
+        self.model_name = model_name
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
 
         self.pin_memory = True
 
     def initialize(self, training=True, force_load_plans=False):
-        """
-        - replaced get_default_augmentation with get_moreDA_augmentation
-        - enforce to only run this code once
-        - loss function wrapper for deep supervision
-
-        :param training:
-        :param force_load_plans:
-        :return:
-        """
+        # self.was_initialized = False from parent class
         if not self.was_initialized:
-            maybe_mkdir_p(self.output_folder)
-
+            maybe_mkdir_p(self.output_folder) # os.makedirs(directory, exist_ok=True)
             if force_load_plans or (self.plans is None):
-                self.load_plans_file()
+                self.load_plans_file() # self.plans = load_pickle(self.plans_file)
 
-            self.process_plans(self.plans)
+            self.process_plans(self.plans)  # Just let it process, we will only use a part of parameters
 
             self.setup_DA_params()
 
             ################# Here we wrap the loss for deep supervision ############
             # we need to know the number of outputs of the network
             net_numpool = len(self.net_num_pool_op_kernel_sizes)
+            # net_numpool = nnFormer's number of ouputs of the network
 
             # we give each output a weight which decreases exponentially (division by 2) as the resolution decreases
             # this gives higher resolution outputs more weight in the loss
             weights = np.array([1 / (2 ** i) for i in range(net_numpool)])
-
-            # we don't use the lowest 2 outputs. Normalize weights so that they sum to 1
             mask = np.array([True] + [True if i < net_numpool - 1 else False for i in range(1, net_numpool)])
             weights[~mask] = 0
             weights = weights / weights.sum()
@@ -112,59 +124,117 @@ class nnUNetTrainerV2(nnUNetTrainer):
                     use_nondetMultiThreadedAugmenter=False
                 )
                 self.print_to_log_file("TRAINING KEYS:\n %s" % (str(self.dataset_tr.keys())),
-                                       also_print_to_console=False)
+                                       also_print_to_console=True)
                 self.print_to_log_file("VALIDATION KEYS:\n %s" % (str(self.dataset_val.keys())),
-                                       also_print_to_console=False)
+                                       also_print_to_console=True)
             else:
                 pass
 
             self.initialize_network()
             self.initialize_optimizer_and_scheduler()
-
-            assert isinstance(self.network, (SegmentationNetwork, nn.DataParallel))
         else:
             self.print_to_log_file('self.was_initialized is True, not running self.initialize again')
         self.was_initialized = True
 
-    def initialize_network(self):
-        """
-        - momentum 0.99
-        - SGD instead of Adam
-        - self.lr_scheduler = None because we do poly_lr
-        - deep supervision = True
-        - i am sure I forgot something here
 
-        Known issue: forgot to set neg_slope=0 in InitWeights_He; should not make a difference though
+    def setup_DA_params(self):
+        """
+        - we increase roation angle from [-15, 15] to [-30, 30]
+        - scale range is now (0.7, 1.4), was (0.85, 1.25)
+        - we don't do elastic deformation anymore
         :return:
         """
+        # need to modify
+        self.deep_supervision_scales = [[1, 1, 1]] + list(list(i) for i in 1 / np.cumprod(
+            np.vstack(self.net_num_pool_op_kernel_sizes), axis=0))[:-1]
+
         if self.threeD:
-            conv_op = nn.Conv3d
-            dropout_op = nn.Dropout3d
-            norm_op = nn.InstanceNorm3d
-
+            self.data_aug_params = default_3D_augmentation_params
+            self.data_aug_params['rotation_x'] = (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi)
+            self.data_aug_params['rotation_y'] = (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi)
+            self.data_aug_params['rotation_z'] = (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi)
+            if self.do_dummy_2D_aug:
+                self.data_aug_params["dummy_2D"] = True
+                self.print_to_log_file("Using dummy2d data augmentation")
+                self.data_aug_params["elastic_deform_alpha"] = \
+                    default_2D_augmentation_params["elastic_deform_alpha"]
+                self.data_aug_params["elastic_deform_sigma"] = \
+                    default_2D_augmentation_params["elastic_deform_sigma"]
+                self.data_aug_params["rotation_x"] = default_2D_augmentation_params["rotation_x"]
         else:
-            conv_op = nn.Conv2d
-            dropout_op = nn.Dropout2d
-            norm_op = nn.InstanceNorm2d
+            self.do_dummy_2D_aug = False
+            if max(self.patch_size) / min(self.patch_size) > 1.5:
+                default_2D_augmentation_params['rotation_x'] = (-15. / 360 * 2. * np.pi, 15. / 360 * 2. * np.pi)
+            self.data_aug_params = default_2D_augmentation_params
+        self.data_aug_params["mask_was_used_for_normalization"] = self.use_mask_for_norm
 
-        norm_op_kwargs = {'eps': 1e-5, 'affine': True}
-        dropout_op_kwargs = {'p': 0, 'inplace': True}
-        net_nonlin = nn.LeakyReLU
-        net_nonlin_kwargs = {'negative_slope': 1e-2, 'inplace': True}
-        self.network = Generic_UNet(self.num_input_channels, self.base_num_features, self.num_classes,
-                                    len(self.net_num_pool_op_kernel_sizes),
-                                    self.conv_per_stage, 2, conv_op, norm_op, norm_op_kwargs, dropout_op,
-                                    dropout_op_kwargs,
-                                    net_nonlin, net_nonlin_kwargs, True, False, lambda x: x, InitWeights_He(1e-2),
-                                    self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, False, True, True)
+        if self.do_dummy_2D_aug:
+            self.basic_generator_patch_size = get_patch_size(self.patch_size[1:],
+                                                             self.data_aug_params['rotation_x'],
+                                                             self.data_aug_params['rotation_y'],
+                                                             self.data_aug_params['rotation_z'],
+                                                             self.data_aug_params['scale_range'])
+            self.basic_generator_patch_size = np.array([self.patch_size[0]] + list(self.basic_generator_patch_size))
+        else:
+            self.basic_generator_patch_size = get_patch_size(self.patch_size, self.data_aug_params['rotation_x'],
+                                                             self.data_aug_params['rotation_y'],
+                                                             self.data_aug_params['rotation_z'],
+                                                             self.data_aug_params['scale_range'])
+
+        self.data_aug_params["scale_range"] = (0.7, 1.4)
+        self.data_aug_params["do_elastic"] = False
+        self.data_aug_params['selected_seg_channels'] = [0]
+        self.data_aug_params['patch_size_for_spatialtransform'] = self.patch_size
+
+        self.data_aug_params["num_cached_per_thread"] = 2
+
+    def initialize_network(self):
+        """
+        The idea is to use our own model instead of generic 3d
+        """
+        """
+        The parameter settings are in nnformer not from hyperparameters
+        """
+        if self.model_name == '3d_nnFormer':
+            self.network = nnformer(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_d1':
+            self.network = nnformer_d1(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_v4':
+            self.network = nnformer_v4(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_v4d1':
+            self.network = nnformer_v4d1(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_v4d2':
+            self.network = nnformer_v4d2(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_convmixer':
+            self.network = nnformer_ConvMixer(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_v4d4':
+            self.network = nnformer_v4d4(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_v4d5':
+            self.network = nnformer_v4d5(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_v4d5_64':
+            self.network = nnformer_v4d5_64(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_v4d5_96':
+            self.network = nnformer_v4d5_96(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_64':
+            self.network = nnformer_64(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_96':
+            self.network = nnformer_96(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_pool':
+            self.network = nnformer_pool(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_nope':
+            self.network = nnformer_nope(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnConv':
+            self.network = nnConv(self.num_input_channels, self.num_classes, deep_supervision=True)
+        
+            
         if torch.cuda.is_available():
             self.network.cuda()
         self.network.inference_apply_nonlin = softmax_helper
 
+
     def initialize_optimizer_and_scheduler(self):
         assert self.network is not None, "self.initialize_network must be called first"
-        self.optimizer = torch.optim.SGD(self.network.parameters(), self.initial_lr, weight_decay=self.weight_decay,
-                                         momentum=0.99, nesterov=True)
+        self.optimizer = torch.optim.AdamW(self.network.parameters(), lr=self.initial_lr, betas=(0.9, 0.999), eps=1e-07, weight_decay=self.weight_decay, amsgrad=False)
         self.lr_scheduler = None
 
     def run_online_evaluation(self, output, target):
@@ -223,7 +293,6 @@ class nnUNetTrainerV2(nnUNetTrainer):
     def run_iteration(self, data_generator, do_backprop=True, run_online_evaluation=False):
         """
         gradient clipping improves training stability
-
         :param data_generator:
         :param do_backprop:
         :param run_online_evaluation:
@@ -286,7 +355,7 @@ class nnUNetTrainerV2(nnUNetTrainer):
             # if fold==all then we use all images for training and validation
             tr_keys = val_keys = list(self.dataset.keys())
         else:
-            splits_file = join(self.dataset_directory, "splits_final.pkl")
+            splits_file = join(self.dataset_directory, splits_path)
 
             # if the split file does not exist we need to create it
             if not isfile(splits_file):
@@ -336,65 +405,11 @@ class nnUNetTrainerV2(nnUNetTrainer):
         for i in val_keys:
             self.dataset_val[i] = self.dataset[i]
 
-    def setup_DA_params(self):
-        """
-        - we increase roation angle from [-15, 15] to [-30, 30]
-        - scale range is now (0.7, 1.4), was (0.85, 1.25)
-        - we don't do elastic deformation anymore
-
-        :return:
-        """
-
-        self.deep_supervision_scales = [[1, 1, 1]] + list(list(i) for i in 1 / np.cumprod(
-            np.vstack(self.net_num_pool_op_kernel_sizes), axis=0))[:-1]
-
-        if self.threeD:
-            self.data_aug_params = default_3D_augmentation_params
-            self.data_aug_params['rotation_x'] = (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi)
-            self.data_aug_params['rotation_y'] = (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi)
-            self.data_aug_params['rotation_z'] = (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi)
-            if self.do_dummy_2D_aug:
-                self.data_aug_params["dummy_2D"] = True
-                self.print_to_log_file("Using dummy2d data augmentation")
-                self.data_aug_params["elastic_deform_alpha"] = \
-                    default_2D_augmentation_params["elastic_deform_alpha"]
-                self.data_aug_params["elastic_deform_sigma"] = \
-                    default_2D_augmentation_params["elastic_deform_sigma"]
-                self.data_aug_params["rotation_x"] = default_2D_augmentation_params["rotation_x"]
-        else:
-            self.do_dummy_2D_aug = False
-            if max(self.patch_size) / min(self.patch_size) > 1.5:
-                default_2D_augmentation_params['rotation_x'] = (-15. / 360 * 2. * np.pi, 15. / 360 * 2. * np.pi)
-            self.data_aug_params = default_2D_augmentation_params
-        self.data_aug_params["mask_was_used_for_normalization"] = self.use_mask_for_norm
-
-        if self.do_dummy_2D_aug:
-            self.basic_generator_patch_size = get_patch_size(self.patch_size[1:],
-                                                             self.data_aug_params['rotation_x'],
-                                                             self.data_aug_params['rotation_y'],
-                                                             self.data_aug_params['rotation_z'],
-                                                             self.data_aug_params['scale_range'])
-            self.basic_generator_patch_size = np.array([self.patch_size[0]] + list(self.basic_generator_patch_size))
-        else:
-            self.basic_generator_patch_size = get_patch_size(self.patch_size, self.data_aug_params['rotation_x'],
-                                                             self.data_aug_params['rotation_y'],
-                                                             self.data_aug_params['rotation_z'],
-                                                             self.data_aug_params['scale_range'])
-
-        self.data_aug_params["scale_range"] = (0.7, 1.4)
-        self.data_aug_params["do_elastic"] = False
-        self.data_aug_params['selected_seg_channels'] = [0]
-        self.data_aug_params['patch_size_for_spatialtransform'] = self.patch_size
-
-        self.data_aug_params["num_cached_per_thread"] = 2
-
     def maybe_update_lr(self, epoch=None):
         """
         if epoch is not None we overwrite epoch. Else we use epoch = self.epoch + 1
-
         (maybe_update_lr is called in on_epoch_end which is called before epoch is incremented.
         herefore we need to do +1 here)
-
         :param epoch:
         :return:
         """
@@ -410,7 +425,6 @@ class nnUNetTrainerV2(nnUNetTrainer):
         """
         if we run with -c then we need to set the correct lr for the first epoch, otherwise it will run the first
         continued epoch with self.initial_lr
-
         we also need to make sure deep supervision in the network is enabled for training, thus the wrapper
         :return:
         """
@@ -421,3 +435,8 @@ class nnUNetTrainerV2(nnUNetTrainer):
         ret = super().run_training()
         self.network.do_ds = ds
         return ret
+
+
+
+
+

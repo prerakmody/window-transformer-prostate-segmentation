@@ -693,6 +693,7 @@ def predict_from_folder(model: str, input_folder: str, output_folder: str, folds
         raise ValueError("unrecognized mode. Must be normal, fast or fastest")
 
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", '--input_folder', help="Must contain all modalities for each patient in the correct"
