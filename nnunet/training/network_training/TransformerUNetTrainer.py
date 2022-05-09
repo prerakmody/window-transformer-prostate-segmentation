@@ -10,20 +10,11 @@ from nnunet.network_architecture.neural_network import SegmentationNetwork
 from nnunet.training.loss_functions.deep_supervision import MultipleOutputLoss2
 from nnunet.training.dataloading.dataset_loading import unpack_dataset
 from nnunet.network_architecture.models.nnFormer import nnformer
-from nnunet.network_architecture.models.nnConv import nnConv
+from nnunet.network_architecture.models.nnFormer_75m import nnformer_75m
+from nnunet.network_architecture.models.nnFormer_300m import nnformer_300m
 from nnunet.network_architecture.models.nnFormer_pool import nnformer_pool
-from nnunet.network_architecture.models.nnFormer_nope import nnformer_nope
-from nnunet.network_architecture.models.nnFormer_64 import nnformer_64
-from nnunet.network_architecture.models.nnFormer_96 import nnformer_96
-from nnunet.network_architecture.models.nnFormer_d1 import nnformer_d1
-from nnunet.network_architecture.models.nnFormer_v4 import nnformer_v4
-from nnunet.network_architecture.models.nnFormer_v4d1 import nnformer_v4d1
-from nnunet.network_architecture.models.nnFormer_v4d2 import nnformer_v4d2
-from nnunet.network_architecture.models.nnFormer_v4d4 import nnformer_v4d4
-from nnunet.network_architecture.models.nnFormer_v4d5 import nnformer_v4d5
-from nnunet.network_architecture.models.nnFormer_v4d5_64 import nnformer_v4d5_64
-from nnunet.network_architecture.models.nnFormer_v4d5_96 import nnformer_v4d5_96
-from nnunet.network_architecture.models.nnFormer_convmixer import nnformer_ConvMixer
+from nnunet.network_architecture.models.nnFormer_LNOff import nnformer_LNOff
+from nnunet.network_architecture.models.nnConv import nnConv
 from nnunet.utilities.nd_softmax import softmax_helper
 from sklearn.model_selection import KFold
 from torch import nn
@@ -34,8 +25,8 @@ import torch
 from collections import OrderedDict
 from typing import Tuple
 
-model_name = '3d_nnConv'
-splits_path = 'splits_h2.pkl'
+#model_name = '3d_nnFormer'
+#splits_path = 'splits_h2.pkl'
 class TransformerUNetTrainer(nnUNetTrainer):
     '''
     Modified trainer for Transformer
@@ -48,7 +39,7 @@ class TransformerUNetTrainer(nnUNetTrainer):
     trainer.load...
     trainer.validate()
     '''
-    def __init__(self, plans_file, fold, output_folder=None, dataset_directory=None, batch_dice=True, stage=None,
+    def __init__(self, plans_file, fold, output_folder=None, dataset_directory=None, splits_path=None, batch_dice=True, stage=None,
                  unpack_data=True, deterministic=True, fp16=False):
         '''
 
@@ -65,13 +56,14 @@ class TransformerUNetTrainer(nnUNetTrainer):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
         # There are parameters to be set but I do not know now
-        self.max_num_epochs = 400
+        self.max_num_epochs = 500
         self.patience = 100
         self.initial_lr = 1e-5
-        self.model_name = model_name
+        self.model_name = None
+        self.splits_path = splits_path
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
-
+        
         self.pin_memory = True
 
     def initialize(self, training=True, force_load_plans=False):
@@ -197,34 +189,16 @@ class TransformerUNetTrainer(nnUNetTrainer):
         """
         if self.model_name == '3d_nnFormer':
             self.network = nnformer(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_d1':
-            self.network = nnformer_d1(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_v4':
-            self.network = nnformer_v4(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_v4d1':
-            self.network = nnformer_v4d1(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_v4d2':
-            self.network = nnformer_v4d2(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_convmixer':
-            self.network = nnformer_ConvMixer(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_v4d4':
-            self.network = nnformer_v4d4(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_v4d5':
-            self.network = nnformer_v4d5(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_v4d5_64':
-            self.network = nnformer_v4d5_64(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_v4d5_96':
-            self.network = nnformer_v4d5_96(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_64':
-            self.network = nnformer_64(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_96':
-            self.network = nnformer_96(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_pool':
-            self.network = nnformer_pool(self.num_input_channels, self.num_classes, deep_supervision=True)
-        elif self.model_name == '3d_nnFormer_nope':
-            self.network = nnformer_nope(self.num_input_channels, self.num_classes, deep_supervision=True)
         elif self.model_name == '3d_nnConv':
             self.network = nnConv(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_75m':
+            self.network = nnformer_75m(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_300m':
+            self.network = nnformer_300m(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_pool':
+            self.network = nnformer_pool(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_LNOff':
+            self.network = nnformer_LNOff(self.num_input_channels, self.num_classes, deep_supervision=True)
         
             
         if torch.cuda.is_available():
@@ -355,7 +329,7 @@ class TransformerUNetTrainer(nnUNetTrainer):
             # if fold==all then we use all images for training and validation
             tr_keys = val_keys = list(self.dataset.keys())
         else:
-            splits_file = join(self.dataset_directory, splits_path)
+            splits_file = join(self.dataset_directory, self.splits_path)
 
             # if the split file does not exist we need to create it
             if not isfile(splits_file):

@@ -34,8 +34,7 @@ def get_configuration_from_output_folder(folder):
 def get_default_configuration(network, task, network_trainer, plans_identifier=default_plans_identifier,
                               search_in=(nnunet.__path__[0], "training", "network_training"),
                               base_module='nnunet.training.network_training'):
-    assert network in ['2d', '3d_lowres', '3d_fullres', '3d_cascade_fullres', '3d_nnFormer','3d_nnConv','3d_nnFormer_pool','3d_nnFormer_nope','3d_nnFormer_64','3d_nnFormer_96', '3d_nnFormer_v4', '3d_nnFormer_d1', '3d_nnFormer_v4d1', "3d_nnFormer_v4d2"
-        ,"3d_nnFormer_v4d4","3d_nnFormer_v4d5","3d_nnFormer_v4d5_64","3d_nnFormer_v4d5_96","3d_nnFormer_convmixer"]
+    assert network in ['2d', '3d_lowres', '3d_fullres', '3d_cascade_fullres', '3d_nnFormer','3d_nnConv','3d_nnFormer_75m','3d_nnFormer_300m','3d_nnFormer_pool','3d_nnFormer_LNOff']
 
 
     dataset_directory = join(preprocessing_output_dir, task)
@@ -47,10 +46,8 @@ def get_default_configuration(network, task, network_trainer, plans_identifier=d
 
     plans = load_pickle(plans_file)
     # We use defualt plans(the same as nnUNet3D so this part does not need to be changed
-    if task=='Task501_ProstateSegmentation' or  task=='Task502_ProstateSegmentation' and network!='3d_fullres':
+    if task=='Task501_ProstateSegmentation' or  task=='Task502_ProstateSegmentation' or task=='Task503_ProstateSegmentation' and network!='3d_fullres':
         plans['plans_per_stage'][1]['batch_size'] = 4
-        if network=='3d_nnFormer_v3':
-            plans['plans_per_stage'][1]['batch_size'] = 2
         plans['plans_per_stage'][1]['patch_size'] = np.array([64, 128, 128])
         plans['plans_per_stage'][1]['pool_op_kernel_sizes']=[[2,2,2],[2,2,2],[2,2,2],[2,2,2]]
         plans['plans_per_stage'][1]['conv_kernel_sizes']=[[3,3,3],[3,3,3],[3,3,3],[3,3,3],[3,3,3]]

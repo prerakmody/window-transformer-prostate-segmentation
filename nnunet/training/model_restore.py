@@ -88,6 +88,14 @@ def restore_model(pkl_file, checkpoint=None, train=False, fp16=None):
     # ToDo Fabian make saves use kwargs, please...
 
     trainer = tr(*init)
+    #parse model name
+    if name == 'TransformerUNetTrainer':
+        plan_path = init[2]
+        start_pos = plan_path.find('3d_')
+        end_pos = plan_path.find('/Task')
+        model_name = plan_path[start_pos:end_pos]
+        trainer.model_name = model_name
+    
 
     # We can hack fp16 overwriting into the trainer without changing the init arguments because nothing happens with
     # fp16 in the init, it just saves it to a member variable
