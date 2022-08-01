@@ -60,3 +60,27 @@ def load_pretrained_weights(network, fname, verbose=False):
     else:
         raise RuntimeError("Pretrained weights are not compatible with the current network architecture")
 
+def load_self_supervised_weights(network, fname, verbose=False):
+    '''
+    
+    :param network: The network used to train
+    :param fname: The location of self-supervised model 
+    :param verbose: Used to print the weights loaded from self-supervised model
+    :return: None
+    '''
+    saved_model = torch.load(fname)
+    pretrained_dict = saved_model['state_dict']
+    model_dict = network.state_dict()
+    state_dict = {}
+    #state_dict = {k: v for k, v in save_model.items() if k in model_dict.keys()}
+    print("################### Loading pretrained weights from file ", fname, '###################')
+    for k,v in pretrained_dict.items():
+        if k in model_dict.keys() and pretrained_dict[k].shape == model_dict[k].shape:
+            state_dict[k] = v
+    if verbose:
+        print("Below is the list of overlapping blocks in pretrained model and nnUNet architecture:")
+        for key, _ in pretrained_dict.items():
+            print(key)
+    print("################### Done ###################")
+    model_dict.update(state_dict)
+    network.load_state_dict(model_dict)

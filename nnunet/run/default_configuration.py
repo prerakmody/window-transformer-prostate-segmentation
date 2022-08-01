@@ -34,7 +34,9 @@ def get_configuration_from_output_folder(folder):
 def get_default_configuration(network, task, network_trainer, plans_identifier=default_plans_identifier,
                               search_in=(nnunet.__path__[0], "training", "network_training"),
                               base_module='nnunet.training.network_training'):
-    assert network in ['2d', '3d_lowres', '3d_fullres', '3d_cascade_fullres', '3d_nnFormer','3d_nnConv','3d_nnFormer_75m','3d_nnFormer_300m','3d_nnFormer_pool','3d_nnFormer_LNOff']
+    assert network in ['2d', '3d_lowres', '3d_fullres', '3d_cascade_fullres', '3d_nnFormer','3d_nnConv','3d_nnFormer_75m','3d_nnFormer_300m','3d_nnFormer_pool','3d_nnFormer_LNOff'
+                       ,'3d_nnFormer_absolute','3d_nnFormer_noPos','3d_nnFormer_MAE','3d_nnConv_MAE','3d_nnFormer_absolute_MAE','3d_nnFormer_noPos_MAE','3d_nnFormer_sinusoid',
+                       '3d_nnFormer_sinusoid_MAE','3d_nnFormer_pool_MAE','3d_nnFormer_auxiliary','3d_nnFormer1_auxiliary']
 
 
     dataset_directory = join(preprocessing_output_dir, task)
@@ -46,7 +48,7 @@ def get_default_configuration(network, task, network_trainer, plans_identifier=d
 
     plans = load_pickle(plans_file)
     # We use defualt plans(the same as nnUNet3D so this part does not need to be changed
-    if task=='Task501_ProstateSegmentation' or  task=='Task502_ProstateSegmentation' or task=='Task503_ProstateSegmentation' and network!='3d_fullres':
+    if (task=='Task501_ProstateSegmentation' or  task=='Task502_ProstateSegmentation' or task=='Task503_ProstateSegmentation' or task=='Task504_LUMCPretrain') and network!='3d_fullres':
         plans['plans_per_stage'][1]['batch_size'] = 4
         plans['plans_per_stage'][1]['patch_size'] = np.array([64, 128, 128])
         plans['plans_per_stage'][1]['pool_op_kernel_sizes']=[[2,2,2],[2,2,2],[2,2,2],[2,2,2]]
@@ -56,8 +58,12 @@ def get_default_configuration(network, task, network_trainer, plans_identifier=d
         pickle_file.close()
     else:
         plans['plans_per_stage'][1]['batch_size'] = 4
+        plans['plans_per_stage'][1]['patch_size'] = np.array([64, 128, 128])
+        plans['plans_per_stage'][1]['pool_op_kernel_sizes']=[[1, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]]
+        plans['plans_per_stage'][1]['conv_kernel_sizes']=[[1, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3]]
         pickle_file = open(plans_file,'wb')
         pickle.dump(plans, pickle_file)
+        pickle_file.close()
     possible_stages = list(plans['plans_per_stage'].keys())
 
     if (network == '3d_cascade_fullres' or network == "3d_lowres") and len(possible_stages) == 1:

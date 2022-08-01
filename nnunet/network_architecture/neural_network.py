@@ -524,38 +524,63 @@ class SegmentationNetwork(NeuralNetwork):
         else:
             mirror_idx = 1
             num_results = 1
-
+        auxiliary = (self.__class__.__name__ == 'nnformer_auxiliary')
         for m in range(mirror_idx):
             if m == 0:
-                pred = self.inference_apply_nonlin(self(x))
+                pred = self(x)
+                if auxiliary:
+                    pred = pred[0] #only retrieve the first arugment; the second one is for auxiliary task
+                pred = self.inference_apply_nonlin(pred)
                 result_torch += 1 / num_results * pred
 
             if m == 1 and (2 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (4, ))))
+                pred = self((torch.flip(x, (4, ))))
+                if auxiliary:
+                    pred = pred[0] #only retrieve the first arugment; the second one is for auxiliary task
+                pred = self.inference_apply_nonlin(pred)
                 result_torch += 1 / num_results * torch.flip(pred, (4,))
 
             if m == 2 and (1 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (3, ))))
+                pred = self(torch.flip(x, (3, )))
+                if auxiliary:
+                    pred = pred[0]  # only retrieve the first arugment; the second one is for auxiliary task
+                pred = self.inference_apply_nonlin(pred)
                 result_torch += 1 / num_results * torch.flip(pred, (3,))
 
             if m == 3 and (2 in mirror_axes) and (1 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (4, 3))))
+                pred = self(torch.flip(x, (4, 3)))
+                if auxiliary:
+                    pred = pred[0]  # only retrieve the first arugment; the second one is for auxiliary task
+                pred = self.inference_apply_nonlin(pred)
                 result_torch += 1 / num_results * torch.flip(pred, (4, 3))
 
             if m == 4 and (0 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (2, ))))
+                pred = self(torch.flip(x, (2, )))
+                if auxiliary:
+                    pred = pred[0]  # only retrieve the first arugment; the second one is for auxiliary task
+                pred = self.inference_apply_nonlin(pred)
                 result_torch += 1 / num_results * torch.flip(pred, (2,))
 
             if m == 5 and (0 in mirror_axes) and (2 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (4, 2))))
+                pred = self(torch.flip(x, (4, 2)))
+                if auxiliary:
+                    pred = pred[0]  # only retrieve the first arugment; the second one is for auxiliary task
+                pred = self.inference_apply_nonlin(pred)
                 result_torch += 1 / num_results * torch.flip(pred, (4, 2))
 
             if m == 6 and (0 in mirror_axes) and (1 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (3, 2))))
+
+                pred = self(torch.flip(x, (3, 2)))
+                if auxiliary:
+                    pred = pred[0]  # only retrieve the first arugment; the second one is for auxiliary task
+                pred = self.inference_apply_nonlin(pred)
                 result_torch += 1 / num_results * torch.flip(pred, (3, 2))
 
             if m == 7 and (0 in mirror_axes) and (1 in mirror_axes) and (2 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (4, 3, 2))))
+                pred = self(torch.flip(x, (4, 3, 2)))
+                if auxiliary:
+                    pred = pred[0]  # only retrieve the first arugment; the second one is for auxiliary task
+                pred = self.inference_apply_nonlin(pred)
                 result_torch += 1 / num_results * torch.flip(pred, (4, 3, 2))
 
         if mult is not None:

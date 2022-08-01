@@ -88,6 +88,7 @@ class NetworkTrainer(object):
         self.dataset_tr = self.dataset_val = None  # do not need to be used, they just appear if you are using the suggested load_dataset_and_do_split
 
         ################# THESE DO NOT NECESSARILY NEED TO BE MODIFIED #####################
+        self.self_supervised = False
         self.patience = 50
         self.val_eval_criterion_alpha = 0.9  # alpha * old + (1-alpha) * new
         # if this is too low then the moving average will be too noisy and the training may terminate early. If it is
@@ -455,6 +456,7 @@ class NetworkTrainer(object):
                 for _ in range(self.num_batches_per_epoch):
                     l = self.run_iteration(self.tr_gen, True)
                     train_losses_epoch.append(l)
+                
 
             self.all_tr_losses.append(np.mean(train_losses_epoch))
             self.print_to_log_file("train loss : %.4f" % self.all_tr_losses[-1])
@@ -464,7 +466,12 @@ class NetworkTrainer(object):
                 self.network.eval()
                 val_losses = []
                 for b in range(self.num_val_batches_per_epoch):
-                    l = self.run_iteration(self.val_gen, False, True)
+                    #disable online evaluation if it is self-supervised. Just not meaningful
+                    if not self.self_supervised:
+                        l = self.run_iteration(self.val_gen, False, True)
+                    else:
+                        #Cannot compute Dice without labels(Even though we might have but we are doing self-supervised learning)
+                        l = self.run_iteration(self.val_gen, False, False)
                     val_losses.append(l)
                 self.all_val_losses.append(np.mean(val_losses))
                 self.print_to_log_file("validation loss: %.4f" % self.all_val_losses[-1])
@@ -603,7 +610,8 @@ class NetworkTrainer(object):
         return continue_training
 
     def on_epoch_end(self):
-        self.finish_online_evaluation()  # does not have to do anything, but can be used to update self.all_val_eval_
+        if not self.self_supervised:
+            self.finish_online_evaluation()  # does not have to do anything, but can be used to update self.all_val_eval_
         # metrics
 
         self.plot_progress()
@@ -625,16 +633,19 @@ class NetworkTrainer(object):
                                  self.all_tr_losses[-1]
 
     def run_iteration(self, data_generator, do_backprop=True, run_online_evaluation=False):
+        # In Self-Supervised Learning, the label is not used.
         data_dict = next(data_generator)
         data = data_dict['data']
-        target = data_dict['target']
-
         data = maybe_to_torch(data)
-        target = maybe_to_torch(target)
+        #No target data in self-supervised
+        if not self.self_supervised:
+            target = data_dict['target']
+            target = maybe_to_torch(target)
 
         if torch.cuda.is_available():
             data = to_cuda(data)
-            target = to_cuda(target)
+            if not self.self_supervised:
+                target = to_cuda(target)
 
         self.optimizer.zero_grad()
 
@@ -651,7 +662,12 @@ class NetworkTrainer(object):
         else:
             output = self.network(data)
             del data
-            l = self.loss(output, target)
+            if not self.self_supervised:
+                l = self.loss(output, target)
+            else:
+                #finish with self_supervised loss
+                # l = self.loss(output,mask...)
+                pass
 
             if do_backprop:
                 l.backward()
@@ -659,8 +675,9 @@ class NetworkTrainer(object):
 
         if run_online_evaluation:
             self.run_online_evaluation(output, target)
-
-        del target
+        
+        if not self.self_supervised:
+            del target
 
         return l.detach().cpu().numpy()
 

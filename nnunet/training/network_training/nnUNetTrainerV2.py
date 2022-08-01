@@ -34,6 +34,7 @@ from torch import nn
 from torch.cuda.amp import autocast
 from nnunet.training.learning_rate.poly_lr import poly_lr
 from batchgenerators.utilities.file_and_folder_operations import *
+from ptflops import get_model_complexity_info
 
 
 class nnUNetTrainerV2(nnUNetTrainer):
@@ -157,6 +158,12 @@ class nnUNetTrainerV2(nnUNetTrainer):
                                     dropout_op_kwargs,
                                     net_nonlin, net_nonlin_kwargs, True, False, lambda x: x, InitWeights_He(1e-2),
                                     self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, False, True, True)
+
+        flops, params = get_model_complexity_info(self.network, (1, 64, 128, 128), as_strings=True,
+                                                  print_per_layer_stat=False)  # 不用写batch_size大小，默认batch_size=1
+        print('Flops:  ' + flops)
+        print('Params: ' + params)
+        
         if torch.cuda.is_available():
             self.network.cuda()
         self.network.inference_apply_nonlin = softmax_helper
@@ -286,7 +293,7 @@ class nnUNetTrainerV2(nnUNetTrainer):
             # if fold==all then we use all images for training and validation
             tr_keys = val_keys = list(self.dataset.keys())
         else:
-            splits_file = join(self.dataset_directory, "splits_final.pkl")
+            splits_file = join(self.dataset_directory, "splits_full.pkl")
 
             # if the split file does not exist we need to create it
             if not isfile(splits_file):

@@ -8,13 +8,24 @@ from nnunet.utilities.to_torch import maybe_to_torch, to_cuda
 from nnunet.network_architecture.initialization import InitWeights_He
 from nnunet.network_architecture.neural_network import SegmentationNetwork
 from nnunet.training.loss_functions.deep_supervision import MultipleOutputLoss2
+from nnunet.training.loss_functions.drloc_loss import cal_selfsupervised_loss
 from nnunet.training.dataloading.dataset_loading import unpack_dataset
 from nnunet.network_architecture.models.nnFormer import nnformer
 from nnunet.network_architecture.models.nnFormer_75m import nnformer_75m
 from nnunet.network_architecture.models.nnFormer_300m import nnformer_300m
 from nnunet.network_architecture.models.nnFormer_pool import nnformer_pool
+from nnunet.network_architecture.models.nnFormer_pool_MAE import nnformer_pool_mae
 from nnunet.network_architecture.models.nnFormer_LNOff import nnformer_LNOff
+from nnunet.network_architecture.models.nnFormer_absolute import nnformer_absolute
+from nnunet.network_architecture.models.nnFormer_noPos import nnformer_noPos
+from nnunet.network_architecture.models.nnFormer_absolute_MAE import nnformer_absolute_mae
+from nnunet.network_architecture.models.nnFormer_noPos_MAE import nnformer_noPos_mae
 from nnunet.network_architecture.models.nnConv import nnConv
+from nnunet.network_architecture.models.nnFormer_MAE import nnformer_mae
+from nnunet.network_architecture.models.nnConv_MAE import nnConv_mae
+from nnunet.network_architecture.models.nnFormer_sinusoid import nnformer_sinusoid
+from nnunet.network_architecture.models.nnFormer_sinusoid_MAE import nnformer_sinusoid_mae
+from nnunet.network_architecture.models.nnFormer_auxiliary import nnformer_auxiliary
 from nnunet.utilities.nd_softmax import softmax_helper
 from sklearn.model_selection import KFold
 from torch import nn
@@ -40,7 +51,7 @@ class TransformerUNetTrainer(nnUNetTrainer):
     trainer.validate()
     '''
     def __init__(self, plans_file, fold, output_folder=None, dataset_directory=None, splits_path=None, batch_dice=True, stage=None,
-                 unpack_data=True, deterministic=True, fp16=False):
+                 unpack_data=True, deterministic=True, fp16=False, sampling_method=None):
         '''
 
         :param plans_file: '/home/yicong/桌面/nnUNet_Folders/nnUNet_preprocessed/Task501_ProstateSegmentation/nnUNetPlansv2.1_plans_3D.pkl' won't change always use this one
@@ -55,7 +66,6 @@ class TransformerUNetTrainer(nnUNetTrainer):
         '''
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
-        # There are parameters to be set but I do not know now
         self.max_num_epochs = 500
         self.patience = 100
         self.initial_lr = 1e-5
@@ -63,6 +73,8 @@ class TransformerUNetTrainer(nnUNetTrainer):
         self.splits_path = splits_path
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
+        # for auxiliary_task
+        self.sampling_method = sampling_method
         
         self.pin_memory = True
 
@@ -90,7 +102,9 @@ class TransformerUNetTrainer(nnUNetTrainer):
             weights = weights / weights.sum()
             self.ds_loss_weights = weights
             # now wrap the loss
-            self.loss = MultipleOutputLoss2(self.loss, self.ds_loss_weights)
+            if not self.self_supervised:
+                self.loss = MultipleOutputLoss2(self.loss, self.ds_loss_weights)
+            # We do not need to specify loss function when using self_supervised
             ################# END ###################
 
             self.folder_with_preprocessed_data = join(self.dataset_directory, self.plans['data_identifier'] +
@@ -199,6 +213,32 @@ class TransformerUNetTrainer(nnUNetTrainer):
             self.network = nnformer_pool(self.num_input_channels, self.num_classes, deep_supervision=True)
         elif self.model_name == '3d_nnFormer_LNOff':
             self.network = nnformer_LNOff(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_noPos':
+            self.network = nnformer_noPos(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_absolute':
+            self.network = nnformer_absolute(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_sinusoid':
+            self.network = nnformer_sinusoid(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_MAE':
+            self.network = nnformer_mae(self.num_input_channels, 1, deep_supervision=False)
+        elif self.model_name == '3d_nnConv_MAE':
+            self.network = nnConv_mae(self.num_input_channels, 1, deep_supervision=False)
+        elif self.model_name == '3d_nnFormer_noPos_MAE':
+            self.network = nnformer_noPos_mae(self.num_input_channels, 1, deep_supervision=False)
+        elif self.model_name == '3d_nnFormer_sinusoid_MAE':
+            self.network = nnformer_sinusoid_mae(self.num_input_channels, 1, deep_supervision=False)
+        elif self.model_name == '3d_nnFormer_pool_MAE':
+            self.network = nnformer_pool_mae(self.num_input_channels, 1, deep_supervision=False)
+        elif self.model_name == '3d_nnFormer_auxiliary':
+            if not self.sampling_method:
+                self.network = nnformer_auxiliary(self.num_input_channels, self.num_classes, deep_supervision=True)
+            else:
+                self.network = nnformer_auxiliary(self.num_input_channels, self.num_classes, deep_supervision=True, sampling_method=self.sampling_method)
+        elif self.model_name == '3d_nnFormer1_auxiliary':
+            self.network = nnformer_auxiliary(self.num_input_channels, self.num_classes, deep_supervision=True,
+                                              sampling_method=self.sampling_method)
+                
+
         
             
         if torch.cuda.is_available():
@@ -273,24 +313,36 @@ class TransformerUNetTrainer(nnUNetTrainer):
         :return:
         """
         data_dict = next(data_generator)
-        data = data_dict['data']
-        target = data_dict['target']
-
+        data = data_dict['data']   
         data = maybe_to_torch(data)
-        target = maybe_to_torch(target)
+        auxiliary = (self.model_name[self.model_name.rfind('_')+1:]=='auxiliary')
+        if not self.self_supervised:
+            target = data_dict['target']
+            target = maybe_to_torch(target)
 
         if torch.cuda.is_available():
             data = to_cuda(data)
-            target = to_cuda(target)
+            if not self.self_supervised:
+                target = to_cuda(target)
 
         self.optimizer.zero_grad()
 
         if self.fp16:
             with autocast():
-                output = self.network(data)
+                if not auxiliary:
+                    output = self.network(data)
+                else:
+                    output, drloc_outputs = self.network(data)
                 del data
-                l = self.loss(output, target)
-
+                if not self.self_supervised:
+                    l = self.loss(output, target)
+                else:
+                    # The output of our nnformer_mae is the loss
+                    l = output 
+                if auxiliary:
+                    loss_ssup, ssup_items = cal_selfsupervised_loss(drloc_outputs, 0.5)
+                    l += loss_ssup
+                    
             if do_backprop:
                 self.amp_grad_scaler.scale(l).backward()
                 self.amp_grad_scaler.unscale_(self.optimizer)
@@ -300,7 +352,14 @@ class TransformerUNetTrainer(nnUNetTrainer):
         else:
             output = self.network(data)
             del data
-            l = self.loss(output, target)
+            if not self.self_supervised:
+                l = self.loss(output, target)
+            else:
+                # The output of our nnformer_mae is the loss
+                l = output
+            if auxiliary:
+                loss_ssup, ssup_items = cal_selfsupervised_loss(drloc_outputs, 0.5)
+                l += loss_ssup
 
             if do_backprop:
                 l.backward()
@@ -309,8 +368,8 @@ class TransformerUNetTrainer(nnUNetTrainer):
 
         if run_online_evaluation:
             self.run_online_evaluation(output, target)
-
-        del target
+        if not self.self_supervised:
+            del target
 
         return l.detach().cpu().numpy()
 
