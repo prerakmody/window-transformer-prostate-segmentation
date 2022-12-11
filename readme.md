@@ -1,5 +1,5 @@
 **Project_Description**
-The Project is built based on nnUNet: The first step is to follow the instructions of the [nnUnet](https://github.com/MIC-DKFZ/nnUNet) to do the Data_Conversion, Experiment Planning and Preprocessing. For this step, you need to store the data in given format in specific folders.
+The Project is built based on nnUNet: The first step is to follow the instructions of the [nnUnet](https://github.com/MIC-DKFZ/nnUNet) to do the Data_Conversion, Experiment Planning and Preprocessing. For this step, you need to store the data in given format in specific folders. The link for the paper is [SPIE Paper](https://spie.org/medical-imaging/presentation/Analyzing-components-of-a-transformer-under-different-data-scales-in/12464-53).
 
 ## Installation
 1. Install [Anaconda](https://docs.anaconda.com/anaconda/install/) with python3.8
@@ -109,6 +109,7 @@ nnUNet_predict -i DataPath  -o TargetPath -t Task -tr TransformerUNetTrainer -f 
 nnUNet_predict -i DataPath  -o TargetPath -t 502 -tr TransformerUNetTrainer -f 0 -m 3d_nnFormer
 ```
 
-
+# Network Architecture for replacing Transformer blocks with convolutions
+<img src="arch.png" width="256px" />
 
 
