@@ -11,6 +11,8 @@ from nnunet.training.loss_functions.deep_supervision import MultipleOutputLoss2
 from nnunet.training.loss_functions.drloc_loss import cal_selfsupervised_loss
 from nnunet.training.dataloading.dataset_loading import unpack_dataset
 from nnunet.network_architecture.models.nnFormer import nnformer
+from nnunet.network_architecture.models.nnFormer_30m import nnformer_30m
+from nnunet.network_architecture.models.nnFormer_30m_MRI import nnformer_30m_MRI
 from nnunet.network_architecture.models.nnFormer_75m import nnformer_75m
 from nnunet.network_architecture.models.nnFormer_300m import nnformer_300m
 from nnunet.network_architecture.models.nnFormer_pool import nnformer_pool
@@ -21,10 +23,14 @@ from nnunet.network_architecture.models.nnFormer_noPos import nnformer_noPos
 from nnunet.network_architecture.models.nnFormer_absolute_MAE import nnformer_absolute_mae
 from nnunet.network_architecture.models.nnFormer_noPos_MAE import nnformer_noPos_mae
 from nnunet.network_architecture.models.nnConv import nnConv
+from nnunet.network_architecture.models.nnConv_30m import nnConv_30m
+from nnunet.network_architecture.models.nnConv_30m_MRI import nnConv_30m_MRI
 from nnunet.network_architecture.models.nnFormer_MAE import nnformer_mae
+from nnunet.network_architecture.models.nnFormer_MaskImage_MAE import nnformer_maskImage_mae 
 from nnunet.network_architecture.models.nnConv_MAE import nnConv_mae
 from nnunet.network_architecture.models.nnFormer_sinusoid import nnformer_sinusoid
 from nnunet.network_architecture.models.nnFormer_sinusoid_MAE import nnformer_sinusoid_mae
+from nnunet.network_architecture.models.nnFormer_AvgPool import nnformer_AvgPool
 from nnunet.network_architecture.models.nnFormer_auxiliary import nnformer_auxiliary
 from nnunet.utilities.nd_softmax import softmax_helper
 from sklearn.model_selection import KFold
@@ -66,7 +72,7 @@ class TransformerUNetTrainer(nnUNetTrainer):
         '''
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
-        self.max_num_epochs = 500
+        self.max_num_epochs = 300
         self.patience = 100
         self.initial_lr = 1e-5
         self.model_name = None
@@ -205,6 +211,16 @@ class TransformerUNetTrainer(nnUNetTrainer):
             self.network = nnformer(self.num_input_channels, self.num_classes, deep_supervision=True)
         elif self.model_name == '3d_nnConv':
             self.network = nnConv(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnConv_30m':
+            self.network = nnConv_30m(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnConv_30m_MRI':
+            self.network = nnConv_30m_MRI(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnConv_75m':
+            self.network = nnConv(self.num_input_channels, self.num_classes, 100, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_30m':
+            self.network = nnformer_30m(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_30m_MRI':
+            self.network = nnformer_30m_MRI(self.num_input_channels, self.num_classes, deep_supervision=True)
         elif self.model_name == '3d_nnFormer_75m':
             self.network = nnformer_75m(self.num_input_channels, self.num_classes, deep_supervision=True)
         elif self.model_name == '3d_nnFormer_300m':
@@ -219,8 +235,18 @@ class TransformerUNetTrainer(nnUNetTrainer):
             self.network = nnformer_absolute(self.num_input_channels, self.num_classes, deep_supervision=True)
         elif self.model_name == '3d_nnFormer_sinusoid':
             self.network = nnformer_sinusoid(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_sinusoid_1':
+            self.network = nnformer_sinusoid(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_sinusoid_2':
+            self.network = nnformer_sinusoid(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_AvgPool':
+            self.network = nnformer_AvgPool(self.num_input_channels, self.num_classes, deep_supervision=True)
+        elif self.model_name == '3d_nnFormer_AvgPool1':
+            self.network = nnformer_AvgPool(self.num_input_channels, self.num_classes, deep_supervision=True)
         elif self.model_name == '3d_nnFormer_MAE':
             self.network = nnformer_mae(self.num_input_channels, 1, deep_supervision=False)
+        elif self.model_name == '3d_nnFormer_MaskImage_MAE':
+            self.network = nnformer_maskImage_mae(self.num_input_channels, 1, deep_supervision=False)
         elif self.model_name == '3d_nnConv_MAE':
             self.network = nnConv_mae(self.num_input_channels, 1, deep_supervision=False)
         elif self.model_name == '3d_nnFormer_noPos_MAE':

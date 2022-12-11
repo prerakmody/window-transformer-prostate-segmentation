@@ -34,9 +34,9 @@ def get_configuration_from_output_folder(folder):
 def get_default_configuration(network, task, network_trainer, plans_identifier=default_plans_identifier,
                               search_in=(nnunet.__path__[0], "training", "network_training"),
                               base_module='nnunet.training.network_training'):
-    assert network in ['2d', '3d_lowres', '3d_fullres', '3d_cascade_fullres', '3d_nnFormer','3d_nnConv','3d_nnFormer_75m','3d_nnFormer_300m','3d_nnFormer_pool','3d_nnFormer_LNOff'
-                       ,'3d_nnFormer_absolute','3d_nnFormer_noPos','3d_nnFormer_MAE','3d_nnConv_MAE','3d_nnFormer_absolute_MAE','3d_nnFormer_noPos_MAE','3d_nnFormer_sinusoid',
-                       '3d_nnFormer_sinusoid_MAE','3d_nnFormer_pool_MAE','3d_nnFormer_auxiliary','3d_nnFormer1_auxiliary']
+    assert network in ['2d', '3d_lowres', '3d_fullres', '3d_cascade_fullres', '3d_nnFormer','3d_nnFormer_30m','3d_nnFormer_30m_MRI','3d_nnFormer_75m','3d_nnConv','3d_nnConv_30m', '3d_nnConv_30m_MRI','3d_nnConv_75m', '3d_nnConv_75m_1', '3d_nnFormer_75m_1','3d_nnFormer_75m','3d_nnFormer_300m','3d_nnFormer_pool','3d_nnFormer_AvgPool','3d_nnFormer_AvgPool1','3d_nnFormer_LNOff'
+                       ,'3d_nnFormer_absolute','3d_nnFormer_noPos','3d_nnFormer_MAE','3d_nnConv_MAE','3d_nnFormer_absolute_MAE','3d_nnFormer_noPos_MAE','3d_nnFormer_sinusoid','3d_nnFormer_sinusoid_1','3d_nnFormer_sinusoid_2',
+                       '3d_nnFormer_sinusoid_MAE','3d_nnFormer_pool_MAE','3d_nnFormer_auxiliary','3d_nnFormer1_auxiliary','3d_nnFormer_MaskImage_MAE']
 
 
     dataset_directory = join(preprocessing_output_dir, task)
@@ -53,6 +53,14 @@ def get_default_configuration(network, task, network_trainer, plans_identifier=d
         plans['plans_per_stage'][1]['patch_size'] = np.array([64, 128, 128])
         plans['plans_per_stage'][1]['pool_op_kernel_sizes']=[[2,2,2],[2,2,2],[2,2,2],[2,2,2]]
         plans['plans_per_stage'][1]['conv_kernel_sizes']=[[3,3,3],[3,3,3],[3,3,3],[3,3,3],[3,3,3]]
+        pickle_file = open(plans_file,'wb')
+        pickle.dump(plans, pickle_file)
+        pickle_file.close()
+    elif (task=='Task505_PROMISE12' or task == 'Task506_ProstateX') and network!='3d_fullres':
+        plans['plans_per_stage'][0]['batch_size'] = 4
+        plans['plans_per_stage'][0]['patch_size'] = np.array([16, 128, 128])
+        plans['plans_per_stage'][0]['pool_op_kernel_sizes']=[[1,2,2],[1,2,2],[2,2,2],[2,2,2]]
+        plans['plans_per_stage'][0]['conv_kernel_sizes']=[[1,3,3],[1,3,3],[3,3,3],[3,3,3],[3,3,3]]
         pickle_file = open(plans_file,'wb')
         pickle.dump(plans, pickle_file)
         pickle_file.close()

@@ -12,13 +12,13 @@ import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_3tuple, trunc_normal_
 
-#Replace self-attention with CNN kernel_size=3
+#Replace self-attention with AvgPooling kernel_size=3
 
 class SingleConv3DBlock(nn.Module):
     #use for resolution recover
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, Conv3D=nn.Conv3d, norm_layer=nn.LayerNorm, act_layer=nn.GELU):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, Pool3D=nn.AvgPool3d, norm_layer=nn.LayerNorm, act_layer=nn.GELU):
         super().__init__()
-        self.conv = Conv3D(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=((kernel_size - 1) // 2))
+        self.conv = Pool3D(kernel_size=kernel_size, stride=stride, padding=((kernel_size - 1) // 2))
         self.act = act_layer()
         self.norm = norm_layer(out_channels)
 
@@ -66,6 +66,9 @@ class OperationBlock(nn.Module):
         self.mlp_ratio = mlp_ratio
         self.norm1 = norm_layer(dim)
         self.operation_block = SingleConv3DBlock(dim, dim, kernel_size=kernel_size, stride=stride)
+        self.norm2 = norm_layer(dim)
+        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
     def forward(self, x):
@@ -93,6 +96,7 @@ class OperationBlock(nn.Module):
 
         # FFN
         x = shortcut + self.drop_path(x)
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
 
         return x.permute(0,2,1)
 
@@ -387,7 +391,6 @@ class SwinTransformer(nn.Module):
                  patch_size=4,
                  in_chans=1,
                  embed_dim=96,
-                 conv_dim=192,
                  depths=[2, 2, 2, 2],
                  mlp_ratio=4.,
                  drop_rate=0.,
@@ -404,7 +407,6 @@ class SwinTransformer(nn.Module):
 
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
-        self.conv_dim = conv_dim
         self.ape = ape
         self.patch_norm = patch_norm
         self.out_indices = out_indices
@@ -414,9 +416,6 @@ class SwinTransformer(nn.Module):
         self.patch_embed = PatchEmbed(
             patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim,
             norm_layer=norm_layer if self.patch_norm else None)
-        #reduce the channel_size in order to equalize the parameters
-
-        self.reduce = nn.Conv3d(self.embed_dim,self.conv_dim,kernel_size=1)
 
         # absolute position embedding
         if self.ape:
@@ -438,7 +437,7 @@ class SwinTransformer(nn.Module):
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
             layer = BasicLayer(
-                dim=int(conv_dim * 2 ** i_layer),
+                dim=int(embed_dim * 2 ** i_layer),
                 input_resolution=(
                     pretrain_img_size[0] // patch_size[0] // 2 ** i_layer,
                     pretrain_img_size[1] // patch_size[1] // 2 ** i_layer,
@@ -453,7 +452,7 @@ class SwinTransformer(nn.Module):
                 use_checkpoint=use_checkpoint)
             self.layers.append(layer)
 
-        num_features = [int(conv_dim * 2 ** i) for i in range(self.num_layers)]
+        num_features = [int(embed_dim * 2 ** i) for i in range(self.num_layers)]
         self.num_features = num_features
 
         # add a norm layer for each output
@@ -485,7 +484,6 @@ class SwinTransformer(nn.Module):
         """Forward function."""
 
         x = self.patch_embed(x)
-        x = self.reduce(x)
         down = []
 
         Ws, Wh, Ww = x.size(2), x.size(3), x.size(4)
@@ -587,11 +585,11 @@ class final_patch_expanding(nn.Module):
         return x
 
 
-class nnConv(SegmentationNetwork):
+class nnformer_AvgPool(SegmentationNetwork):
 
-    def __init__(self, input_channels, num_classes, conv_dim=144, deep_supervision=True):
+    def __init__(self, input_channels, num_classes, deep_supervision=True):
 
-        super(nnConv, self).__init__()
+        super(nnformer_AvgPool, self).__init__()
 
         self._deep_supervision = deep_supervision
         self.do_ds = deep_supervision
@@ -603,20 +601,21 @@ class nnConv(SegmentationNetwork):
         self.upscale_logits_ops.append(lambda x: x)
 
         embed_dim = 192
-        conv_dim = conv_dim
         pretrain_img_size = [64, 128, 128]
         depths = [2, 2, 2, 2]
+        num_heads = [6, 12, 24, 48]
         patch_size = [2, 4, 4]
+        window_size = 4
         self.model_down = SwinTransformer(pretrain_img_size=pretrain_img_size,
-                                          embed_dim=embed_dim, conv_dim=conv_dim, patch_size=patch_size, depths=depths,
+                                          embed_dim=embed_dim, patch_size=patch_size, depths=depths,
                                           in_chans=input_channels)
         # for some reasons,the decoder is named with encoder
-        self.encoder = encoder(pretrain_img_size=pretrain_img_size, embed_dim=conv_dim,
+        self.encoder = encoder(pretrain_img_size=pretrain_img_size, embed_dim=embed_dim,
                                patch_size=patch_size, depths=depths[::-1][1:])
 
         self.final = []
         for i in range(len(depths) - 1):
-            self.final.append(final_patch_expanding(conv_dim * 2 ** i, num_classes, patch_size=patch_size))
+            self.final.append(final_patch_expanding(embed_dim * 2 ** i, num_classes, patch_size=patch_size))
         self.final = nn.ModuleList(self.final)
 
     def forward(self, x):

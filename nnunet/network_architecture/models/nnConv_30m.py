@@ -587,11 +587,11 @@ class final_patch_expanding(nn.Module):
         return x
 
 
-class nnConv(SegmentationNetwork):
+class nnConv_30m(SegmentationNetwork):
 
-    def __init__(self, input_channels, num_classes, conv_dim=144, deep_supervision=True):
+    def __init__(self, input_channels, num_classes, conv_dim=64, deep_supervision=True):
 
-        super(nnConv, self).__init__()
+        super(nnConv_30m, self).__init__()
 
         self._deep_supervision = deep_supervision
         self.do_ds = deep_supervision
@@ -602,7 +602,7 @@ class nnConv(SegmentationNetwork):
 
         self.upscale_logits_ops.append(lambda x: x)
 
-        embed_dim = 192
+        embed_dim = 84
         conv_dim = conv_dim
         pretrain_img_size = [64, 128, 128]
         depths = [2, 2, 2, 2]

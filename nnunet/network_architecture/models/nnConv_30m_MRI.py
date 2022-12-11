@@ -130,6 +130,38 @@ class PatchMerging(nn.Module):
         x = x.permute(0, 2, 3, 4, 1).view(B, -1, 2 * C)
         return x
 
+class PatchMerging_1(nn.Module):
+    """ Patch Merging Layer
+
+    Args:
+        dim (int): Number of input channels.
+        norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
+    """
+
+    def __init__(self, dim, norm_layer=nn.LayerNorm):
+        super().__init__()
+        self.dim = dim
+        self.reduction = nn.Conv3d(dim, dim * 2, kernel_size=(1,2,2), stride=(1,2,2))
+        self.norm = norm_layer(dim)
+
+    def forward(self, x, S, H, W):
+        """ Forward function.
+
+        Args:
+            x: Input feature, tensor size (B, H*W, C).
+            H, W: Spatial resolution of the input feature.
+        """
+        B, L, C = x.shape
+        assert L == H * W * S, "input feature has wrong size"
+
+        x = x.view(B, S, H, W, C)
+
+        x = F.gelu(x)
+        x = self.norm(x)
+        x = x.permute(0, 4, 1, 2, 3)
+        x = self.reduction(x)
+        x = x.permute(0, 2, 3, 4, 1).view(B, -1, 2 * C)
+        return x
 
 class Patch_Expanding(nn.Module):
     def __init__(self, dim, norm_layer=nn.LayerNorm):
@@ -157,7 +189,32 @@ class Patch_Expanding(nn.Module):
         x = x.permute(0, 2, 3, 4, 1).view(B, -1, C // 2)
 
         return x
+class Patch_Expanding1(nn.Module):
+    def __init__(self, dim, norm_layer=nn.LayerNorm):
+        super().__init__()
+        self.dim = dim
+        self.norm = norm_layer(dim)
+        self.up = nn.ConvTranspose3d(dim, dim // 2, (1, 2, 2), (1, 2, 2))
 
+    def forward(self, x, S, H, W):
+        """ Forward function.
+
+        Args:
+            x: Input feature, tensor size (B, H*W, C).
+            H, W: Spatial resolution of the input feature.
+        """
+
+        B, L, C = x.shape
+        assert L == H * W * S, "input feature has wrong size"
+
+        x = x.view(B, S, H, W, C)
+
+        x = self.norm(x)
+        x = x.permute(0, 4, 1, 2, 3)
+        x = self.up(x)
+        x = x.permute(0, 2, 3, 4, 1).view(B, -1, C // 2)
+
+        return x
 
 class BasicLayer(nn.Module):
     """ A basic Swin Transformer layer for one stage.
@@ -222,7 +279,10 @@ class BasicLayer(nn.Module):
         if self.downsample is not None:
             x = x.permute(0,2,1)
             x_down = self.downsample(x, S, H, W)
-            Ws, Wh, Ww = (S + 1) // 2, (H + 1) // 2, (W + 1) // 2
+            if H>16:
+                Ws, Wh, Ww = S, (H + 1) // 2, (W + 1) // 2
+            else:
+                Ws, Wh, Ww = (S + 1) // 2, (H + 1) // 2, (W + 1) // 2
             return x, S, H, W, x_down, Ws, Wh, Ww
         else:
             return x, S, H, W, x, S, H, W
@@ -259,7 +319,7 @@ class BasicLayer_up(nn.Module):
                  ):
         super().__init__()
         self.depth = depth
-
+        self.resolution = input_resolution
         # build blocks
         self.blocks = nn.ModuleList([
             OperationBlock(
@@ -275,7 +335,7 @@ class BasicLayer_up(nn.Module):
         # patch merging layer
 
         self.Upsample = upsample(dim=2 * dim, norm_layer=norm_layer)
-
+        self.Upsample1 = Patch_Expanding1(dim=2 * dim, norm_layer=norm_layer)
     def forward(self, x, skip, S, H, W):
         """ Forward function.
 
@@ -284,10 +344,13 @@ class BasicLayer_up(nn.Module):
             H, W: Spatial resolution of the input feature.
         """
 
-        x_up = self.Upsample(x, S, H, W)
-
+        if self.resolution[0] == self.resolution[1]:
+            x_up = self.Upsample(x, S, H, W)
+            S, H, W = S * 2, H * 2, W * 2
+        else:
+            x_up = self.Upsample1(x, S, H, W)
+            S, H, W = S, H*2, W*2
         x_up += skip
-        S, H, W = S * 2, H * 2, W * 2
         x_up = x_up.permute(0, 2, 1)
         for blk in self.blocks:
             x_up = blk(x_up)
@@ -347,7 +410,7 @@ class PatchEmbed(nn.Module):
         self.embed_dim = embed_dim
 
         self.proj1 = project(in_chans, embed_dim // 2, [1, 2, 2], 1, nn.GELU, nn.LayerNorm, False)
-        self.proj2 = project(embed_dim // 2, embed_dim, [2, 2, 2], 1, nn.GELU, nn.LayerNorm, True)
+        self.proj2 = project(embed_dim // 2, embed_dim, [1, 2, 2], 1, nn.GELU, nn.LayerNorm, True)
         if norm_layer is not None:
             self.norm = norm_layer(embed_dim)
         else:
@@ -437,19 +500,29 @@ class SwinTransformer(nn.Module):
         # build layers
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
+            if i_layer < 1:
+                # We do not decrease the resolution for the first dimension after the first Transformer block
+                input_resolution = (
+                        pretrain_img_size[0] // patch_size[0],
+                        pretrain_img_size[1] // patch_size[1] // 2 ** i_layer,
+                        pretrain_img_size[2] // patch_size[2] // 2 ** i_layer)
+                downsample = PatchMerging_1
+            else:
+                input_resolution = (
+                    pretrain_img_size[0] // patch_size[0] // 2 ** (i_layer-1),
+                    pretrain_img_size[1] // patch_size[1] // 2 ** i_layer,
+                    pretrain_img_size[2] // patch_size[2] // 2 ** i_layer)
+                downsample = PatchMerging
             layer = BasicLayer(
                 dim=int(conv_dim * 2 ** i_layer),
-                input_resolution=(
-                    pretrain_img_size[0] // patch_size[0] // 2 ** i_layer,
-                    pretrain_img_size[1] // patch_size[1] // 2 ** i_layer,
-                    pretrain_img_size[2] // patch_size[2] // 2 ** i_layer),
+                input_resolution=input_resolution,
                 depth=depths[i_layer],
                 mlp_ratio=mlp_ratio,
                 drop=drop_rate,
                 drop_path=dpr[sum(
                     depths[:i_layer]):sum(depths[:i_layer + 1])],
                 norm_layer=norm_layer,
-                downsample=PatchMerging,
+                downsample=downsample,
                 use_checkpoint=use_checkpoint)
             self.layers.append(layer)
 
@@ -539,12 +612,20 @@ class encoder(nn.Module):
         # build layers
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers)[::-1]:
+            if i_layer >= (len(depths)-2):
+                input_resolution = (
+                    pretrain_img_size[0] // patch_size[0],
+                    pretrain_img_size[1] // patch_size[1] // 2 ** (len(depths) - i_layer - 1),
+                    pretrain_img_size[2] // patch_size[2] // 2 ** (len(depths) - i_layer - 1))
+            else:
+                input_resolution = (
+                    pretrain_img_size[0] // patch_size[0] // 2 ** (len(depths) - i_layer - 2),
+                    pretrain_img_size[1] // patch_size[1] // 2 ** (len(depths) - i_layer - 1),
+                    pretrain_img_size[2] // patch_size[2] // 2 ** (len(depths) - i_layer - 1))
+
             layer = BasicLayer_up(
                 dim=int(embed_dim * 2 ** (len(depths) - i_layer - 1)),
-                input_resolution=(
-                    pretrain_img_size[0] // patch_size[0] // 2 ** (len(depths) - i_layer - 1),
-                    pretrain_img_size[1] // patch_size[1] // 2 ** (len(depths) - i_layer - 1),
-                    pretrain_img_size[2] // patch_size[2] // 2 ** (len(depths) - i_layer - 1)),
+                input_resolution=input_resolution,
                 depth=depths[i_layer],
                 mlp_ratio=mlp_ratio,
                 drop=drop_rate,
@@ -587,11 +668,11 @@ class final_patch_expanding(nn.Module):
         return x
 
 
-class nnConv(SegmentationNetwork):
+class nnConv_30m_MRI(SegmentationNetwork):
 
-    def __init__(self, input_channels, num_classes, conv_dim=144, deep_supervision=True):
+    def __init__(self, input_channels, num_classes, conv_dim=64, deep_supervision=True):
 
-        super(nnConv, self).__init__()
+        super(nnConv_30m_MRI, self).__init__()
 
         self._deep_supervision = deep_supervision
         self.do_ds = deep_supervision
@@ -602,11 +683,11 @@ class nnConv(SegmentationNetwork):
 
         self.upscale_logits_ops.append(lambda x: x)
 
-        embed_dim = 192
+        embed_dim = 84
         conv_dim = conv_dim
-        pretrain_img_size = [64, 128, 128]
+        pretrain_img_size = [16, 128, 128]
         depths = [2, 2, 2, 2]
-        patch_size = [2, 4, 4]
+        patch_size = [1, 4, 4]
         self.model_down = SwinTransformer(pretrain_img_size=pretrain_img_size,
                                           embed_dim=embed_dim, conv_dim=conv_dim, patch_size=patch_size, depths=depths,
                                           in_chans=input_channels)
